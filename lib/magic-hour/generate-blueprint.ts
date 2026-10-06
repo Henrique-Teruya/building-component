@@ -67,8 +67,8 @@ function createDevelopmentBlueprintUrl(
   sourceImageUrl?: string
 ): string {
   // If user provided a custom building image, transform THEIR actual image into blueprint CAD linework
-  if (sourceImageUrl && (sourceImageUrl.startsWith("data:") || sourceImageUrl.startsWith("http"))) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1300" width="1000" height="1300">
+  if (sourceImageUrl && (sourceImageUrl.startsWith("data:") || sourceImageUrl.startsWith("http") || sourceImageUrl.startsWith("/"))) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1000 1300" width="1000" height="1300">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#071326" />
@@ -80,28 +80,58 @@ function createDevelopmentBlueprintUrl(
       <path d="M 200 0 L 0 0 0 200" fill="none" stroke="rgba(0, 229, 255, 0.22)" stroke-width="1.2" />
     </pattern>
     <filter id="blueprintFilter" color-interpolation-filters="sRGB">
+      <!-- 1. Desaturate to grayscale -->
       <feColorMatrix type="matrix" values="
         0.33 0.33 0.33 0 0
         0.33 0.33 0.33 0 0
         0.33 0.33 0.33 0 0
         0    0    0    1 0
       " result="gray" />
+      <!-- 2. Architectural Laplacian edge detection (reveals slabs, frames, columns, windows) -->
       <feConvolveMatrix order="3" kernelMatrix="-1 -1 -1 -1 8 -1 -1 -1 -1" preserveAlpha="true" in="gray" result="edges" />
-      <feColorMatrix type="matrix" values="
-        0 0 0 0 0
-        0 1 0 0 0.9
-        0 0 1 0 1
-        0 0 0 2.2 0
-      " in="edges" result="neonLines" />
-      <feBlend in="neonLines" in2="SourceGraphic" mode="screen" opacity="0.6" />
+      <!-- 3. Tint edge lines to electric cyan & white -->
+      <feColorMatrix type="matrix" in="edges" values="
+        0 0 0 0 0.05
+        0 0 0 0 0.85
+        0 0 0 0 1.0
+        1 1 1 0 0
+      " result="cyanLines" />
+      <!-- 4. Subtle monochromatic blueprint wash of building masses -->
+      <feColorMatrix type="matrix" in="gray" values="
+        0 0 0 0 0.03
+        0 0 0 0 0.12
+        0 0 0 0 0.28
+        0 0 0 0.75 0
+      " result="cyanBody" />
+      <!-- 5. Composite sharp cyan linework over the blueprint-tinted structure -->
+      <feComposite in="cyanLines" in2="cyanBody" operator="over" result="blueprintComp" />
+    </filter>
+    <filter id="blueprintGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
   </defs>
 
+  <!-- Deep CAD Blueprint Canvas -->
   <rect width="1000" height="1300" fill="url(#bgGrad)" />
   <rect width="1000" height="1300" fill="url(#grid)" />
-  <rect x="25" y="25" width="950" height="1250" fill="none" stroke="#00e5ff" stroke-width="1.5" stroke-opacity="0.3" />
 
-  <image href="${sourceImageUrl}" x="30" y="30" width="940" height="1240" preserveAspectRatio="xMidYMid meet" filter="url(#blueprintFilter)" opacity="0.9" />
+  <!-- Architectural Outer Border & Corner Alignment Crosshairs -->
+  <rect x="25" y="25" width="950" height="1250" fill="none" stroke="#00e5ff" stroke-width="1.2" stroke-opacity="0.35" />
+  <rect x="33" y="33" width="934" height="1234" fill="none" stroke="#00a3ff" stroke-width="0.8" stroke-opacity="0.2" />
+
+  <g stroke="#00e5ff" stroke-width="1" stroke-opacity="0.4">
+    <!-- Corner L-markers -->
+    <path d="M 20 40 L 40 40 L 40 20" fill="none" />
+    <path d="M 980 40 L 960 40 L 960 20" fill="none" />
+    <path d="M 20 1260 L 40 1260 L 40 1280" fill="none" />
+    <path d="M 980 1260 L 960 1260 L 960 1280" fill="none" />
+  </g>
+
+  <!-- The User's Building Converted into Architectural Blueprint Linework -->
+  <g filter="url(#blueprintGlow)">
+    <image href="${sourceImageUrl}" xlink:href="${sourceImageUrl}" x="30" y="30" width="940" height="1240" preserveAspectRatio="xMidYMid meet" filter="url(#blueprintFilter)" opacity="0.95" />
+  </g>
 </svg>`;
 
     const base64 = Buffer.from(svg).toString("base64");
@@ -280,7 +310,7 @@ export async function generateBuildingBlueprint(
         apiError
       );
       // Fallback to high-precision development blueprint if API fails or quota exceeded
-      const fallbackUrl = createDevelopmentBlueprintUrl(buildingId, projectName);
+      const fallbackUrl = createDevelopmentBlueprintUrl(buildingId, projectName, imageUrl);
       const generatedAt = new Date().toISOString();
 
       const entry: CachedBlueprint = {
@@ -305,7 +335,7 @@ export async function generateBuildingBlueprint(
   // 3. Fallback / Development mode (no API key configured)
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  const devBlueprintUrl = createDevelopmentBlueprintUrl(buildingId, projectName);
+  const devBlueprintUrl = createDevelopmentBlueprintUrl(buildingId, projectName, imageUrl);
   const generatedAt = new Date().toISOString();
 
   const entry: CachedBlueprint = {

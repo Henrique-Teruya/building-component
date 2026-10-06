@@ -22,6 +22,14 @@ export type ViewMode = "progress" | "compare" | "blueprint" | "photo";
 
 export type BlueprintStatus = "idle" | "loading" | "generating" | "completed" | "error";
 
+export type BlueprintState =
+  | "idle"
+  | "uploading"
+  | "processing"
+  | "revealing"
+  | "completed"
+  | "error";
+
 export interface BuildingProgressBlueprintProps {
   buildingId?: string;
   imageUrl?: string;

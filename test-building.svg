@@ -1,0 +1,16 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 600' width='400' height='600'>
+  <rect width='400' height='600' fill='#f1f5f9'/>
+  <rect x='80' y='120' width='240' height='480' fill='#b91c1c'/>
+  <g fill='#fef08a'>
+    <rect x='100' y='160' width='40' height='40'/>
+    <rect x='180' y='160' width='40' height='40'/>
+    <rect x='260' y='160' width='40' height='40'/>
+    <rect x='100' y='240' width='40' height='40'/>
+    <rect x='180' y='240' width='40' height='40'/>
+    <rect x='260' y='240' width='40' height='40'/>
+    <rect x='100' y='320' width='40' height='40'/>
+    <rect x='180' y='320' width='40' height='40'/>
+    <rect x='260' y='320' width='40' height='40'/>
+  </g>
+  <polygon points='80,120 200,40 320,120' fill='#7f1d1d'/>
+</svg>

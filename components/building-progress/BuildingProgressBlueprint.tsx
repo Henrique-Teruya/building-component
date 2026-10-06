@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { ViewMode, BlueprintStatus } from "@/lib/building-progress/types";
+import { ViewMode, BlueprintState } from "@/lib/building-progress/types";
 import { BlueprintViewer } from "./BlueprintViewer";
-import { BlueprintSkeleton } from "./BlueprintSkeleton";
 import { BlueprintError } from "./BlueprintError";
+import {
+  ConstructionLoader,
+  BlueprintReveal,
+} from "@/components/blueprint/construction-loader";
 import {
   UploadCloud,
   Layers,
   SlidersHorizontal,
   FileCode2,
   Image as ImageIcon,
-  RotateCcw,
 } from "lucide-react";
 
 export interface BuildingProgressBlueprintProps {
@@ -42,8 +44,8 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
   const [blueprintUrl, setBlueprintUrl] = useState<string | null>(
     initialBlueprintUrl || null
   );
-  const [status, setStatus] = useState<BlueprintStatus>(
-    initialBlueprintUrl ? "completed" : initialImageUrl ? "loading" : "idle"
+  const [state, setState] = useState<BlueprintState>(
+    initialBlueprintUrl ? "completed" : initialImageUrl ? "processing" : "idle"
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("progress");
@@ -58,22 +60,27 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Blueprint generator API call
+  const MIN_LOADING_DURATION = 2000;
+
+  // Blueprint generator API call with decoupled state machine & minimum duration
   const triggerGeneration = useCallback(
     async (imgUrl: string, bId: string, force = false) => {
-      setStatus("loading");
+      setState("processing");
       setErrorMessage(null);
 
       try {
-        const response = await fetch("/api/building-blueprint", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            buildingId: bId,
-            imageUrl: imgUrl,
-            force,
+        const [response] = await Promise.all([
+          fetch("/api/building-blueprint", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              buildingId: bId,
+              imageUrl: imgUrl,
+              force,
+            }),
           }),
-        });
+          new Promise((resolve) => setTimeout(resolve, MIN_LOADING_DURATION)),
+        ]);
 
         const data = await response.json();
 
@@ -83,7 +90,7 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
 
         if (data.blueprintUrl) {
           setBlueprintUrl(data.blueprintUrl);
-          setStatus("completed");
+          setState("revealing");
           if (onBlueprintGenerated) {
             onBlueprintGenerated(data.blueprintUrl);
           }
@@ -94,7 +101,7 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
         console.error("[BuildingProgressBlueprint] Erro:", err);
         const msg = err instanceof Error ? err.message : "Erro desconhecido";
         setErrorMessage(msg);
-        setStatus("error");
+        setState("error");
       }
     },
     [onBlueprintGenerated]
@@ -115,6 +122,8 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
         alert("Por favor, selecione um arquivo de imagem (PNG, JPEG, WEBP).");
         return;
       }
+
+      setState("uploading");
 
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -185,7 +194,7 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
       />
 
       {/* State 1: No Image Loaded Yet -> Clean Drag & Drop Zone */}
-      {!currentImageUrl && status === "idle" && (
+      {!currentImageUrl && (state === "idle" || state === "uploading") && (
         <div
           className="skr-dropzone-box"
           onClick={() => fileInputRef.current?.click()}
@@ -209,7 +218,13 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
         <div className="skr-blueprint-frame">
           {/* Header Controls: Modes + Replace Photo */}
           <div className="blueprint-top-toolbar">
-            <div className="toolbar-modes">
+            <div
+              className="toolbar-modes"
+              style={{
+                opacity: state === "completed" ? 1 : 0.5,
+                pointerEvents: state === "completed" ? "auto" : "none",
+              }}
+            >
               <button
                 type="button"
                 className={`toolbar-btn ${viewMode === "progress" ? "is-active" : ""}`}
@@ -258,11 +273,28 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
             </button>
           </div>
 
-          {/* Visualizer Body */}
+          {/* Visualizer Stage */}
           <div className="blueprint-stage">
-            {status === "loading" && <BlueprintSkeleton projectName="Empreendimento" />}
+            {/* Decoupled Construction Loader during IA processing */}
+            {state === "processing" && (
+              <ConstructionLoader
+                imageUrl={currentImageUrl}
+                active={true}
+                finishing={false}
+              />
+            )}
 
-            {status === "error" && (
+            {/* Smooth architectural reveal wipe from photo to blueprint */}
+            {state === "revealing" && blueprintUrl && (
+              <BlueprintReveal
+                originalPhotoUrl={currentImageUrl}
+                blueprintUrl={blueprintUrl}
+                onRevealComplete={() => setState("completed")}
+              />
+            )}
+
+            {/* Error handling with retry */}
+            {state === "error" && (
               <BlueprintError
                 message={errorMessage || undefined}
                 onRetry={() => {
@@ -270,12 +302,13 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
                 }}
                 onFallbackToPhoto={() => {
                   setViewMode("photo");
-                  setStatus("completed");
+                  setState("completed");
                 }}
               />
             )}
 
-            {status === "completed" && blueprintUrl && (
+            {/* Clean Final Viewer after reveal completes */}
+            {state === "completed" && blueprintUrl && (
               <BlueprintViewer
                 blueprintUrl={blueprintUrl}
                 realPhotoUrl={currentImageUrl}
@@ -297,7 +330,14 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
 
           {/* Interactive Percentage Slider Bar */}
           {showProgressSlider && (
-            <div className="blueprint-slider-bar">
+            <div
+              className="blueprint-slider-bar"
+              style={{
+                opacity: state === "completed" ? 1 : 0.45,
+                pointerEvents: state === "completed" ? "auto" : "none",
+                transition: "opacity 300ms ease",
+              }}
+            >
               <div className="slider-left">
                 <span className="slider-pct-pill">{currentProgress}%</span>
               </div>
