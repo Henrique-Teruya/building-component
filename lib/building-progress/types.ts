@@ -23,16 +23,17 @@ export type ViewMode = "progress" | "compare" | "blueprint" | "photo";
 export type BlueprintStatus = "idle" | "loading" | "generating" | "completed" | "error";
 
 export interface BuildingProgressBlueprintProps {
-  buildingId: string;
-  imageUrl: string;
-  progress: number; // Real percentage from SKR backend (0-100)
+  buildingId?: string;
+  imageUrl?: string;
+  progress?: number; // Real percentage from SKR backend (0-100)
   projectName?: string;
   location?: string;
   phases?: BuildingPhase[];
   initialBlueprintUrl?: string;
   onBlueprintGenerated?: (blueprintUrl: string) => void;
+  onProgressChange?: (progress: number) => void;
   className?: string;
-  showControls?: boolean;
+  showProgressSlider?: boolean;
   defaultViewMode?: ViewMode;
 }
 

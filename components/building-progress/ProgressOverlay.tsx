@@ -1,35 +1,29 @@
 "use client";
 
-import React, { useId } from "react";
-import { BuildingPhase } from "@/lib/building-progress/types";
-import { CheckCircle2, Clock } from "lucide-react";
+import React from "react";
 
 interface ProgressOverlayProps {
   progress: number; // 0 to 100
-  phases?: BuildingPhase[];
   realPhotoUrl?: string;
-  showPhotoFill?: boolean; // If true, reveals photo in the built section
+  showPhotoFill?: boolean;
   showLaserIndicator?: boolean;
 }
 
 export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
   progress,
-  phases,
   realPhotoUrl,
   showPhotoFill = true,
   showLaserIndicator = true,
 }) => {
-  const gradientId = useId();
-  // Clamp progress between 0 and 100
   const clampedProgress = Math.min(100, Math.max(0, progress));
 
   return (
     <div
       className="progress-overlay-root"
-      aria-label={`Progresso da obra: ${clampedProgress}%`}
+      aria-label={`Progresso: ${clampedProgress}%`}
       role="region"
     >
-      {/* Optional Real Photo Revealed from ground up to progress % */}
+      {/* Real photo revealed up to progress % */}
       {showPhotoFill && realPhotoUrl && (
         <div
           className="progress-built-reveal"
@@ -40,15 +34,14 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={realPhotoUrl}
-            alt="Empreendimento executado até o nível atual"
+            alt=""
             className="progress-built-photo"
           />
-          {/* Subtle architectural overlay tint to bind with blueprint */}
           <div className="progress-built-tint" />
         </div>
       )}
 
-      {/* Luminous Architectural Construction Hatch / Gradient Layer */}
+      {/* Luminous Architectural Construction Hatch */}
       <div
         className="progress-built-hatch"
         style={{
@@ -59,7 +52,7 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
         <div className="hatch-glow-edge" />
       </div>
 
-      {/* Dynamic Laser Guide Line (Horizontal construction datum) */}
+      {/* Minimalist Laser Datum Line */}
       {showLaserIndicator && clampedProgress > 0 && clampedProgress < 100 && (
         <div
           className="progress-laser-line"
@@ -67,42 +60,12 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
             bottom: `${clampedProgress}%`,
           }}
         >
-          {/* Left Ruler Tick */}
-          <div className="laser-tick laser-tick-left">
-            <span className="tick-dot" />
-            <span className="tick-label">NÍVEL EXECUÇÃO</span>
-          </div>
-
-          {/* Central Laser Beam */}
           <div className="laser-beam" />
-
-          {/* Floating Laser Level Badge */}
           <div className="laser-badge">
-            <span className="laser-pulse" />
-            <span className="laser-text">{clampedProgress}% CONCLUÍDO</span>
+            <span className="laser-dot" />
+            <span className="laser-pct">{clampedProgress}%</span>
           </div>
-
-          {/* Right Ruler Tick */}
-          <div className="laser-tick laser-tick-right">
-            <span className="tick-label">ELEVAÇÃO {Math.round(clampedProgress * 0.64)}m</span>
-            <span className="tick-dot" />
-          </div>
-        </div>
-      )}
-
-      {/* 100% Completed Stamp when fully finished */}
-      {clampedProgress === 100 && (
-        <div className="progress-completed-stamp">
-          <CheckCircle2 size={16} />
-          <span>OBRA 100% CONCLUÍDA &amp; ENTREGUE</span>
-        </div>
-      )}
-
-      {/* 0% Just Started Stamp */}
-      {clampedProgress === 0 && (
-        <div className="progress-starting-stamp">
-          <Clock size={15} />
-          <span>INÍCIO DAS OBRAS • CANTEIRO INSTALADO</span>
+          <div className="laser-beam" />
         </div>
       )}
 
@@ -172,9 +135,9 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
           top: 0;
           left: 0;
           right: 0;
-          height: 3px;
+          height: 2px;
           background: #00e5ff;
-          box-shadow: 0 0 12px #00e5ff, 0 0 24px rgba(0, 229, 255, 0.8);
+          box-shadow: 0 0 10px #00e5ff, 0 0 20px rgba(0, 229, 255, 0.7);
         }
 
         .progress-laser-line {
@@ -183,11 +146,10 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
           right: 0;
           display: flex;
           align-items: center;
-          justify-content: space-between;
           transform: translateY(50%);
           transition: bottom var(--duration-progress) var(--ease-standard);
           z-index: 20;
-          padding: 0 12px;
+          padding: 0 8px;
         }
 
         .laser-beam {
@@ -195,11 +157,11 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
           height: 1.5px;
           background: linear-gradient(
             90deg,
-            rgba(0, 229, 255, 0.2) 0%,
+            rgba(0, 229, 255, 0.15) 0%,
             #00e5ff 30%,
             #ffffff 50%,
             #00e5ff 70%,
-            rgba(0, 229, 255, 0.2) 100%
+            rgba(0, 229, 255, 0.15) 100%
           );
           box-shadow: 0 0 8px #00e5ff;
         }
@@ -207,105 +169,31 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
         .laser-badge {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          padding: 4px 12px;
+          gap: 5px;
+          padding: 3px 10px;
           border-radius: var(--radius-full);
-          background: rgba(13, 37, 76, 0.95);
+          background: rgba(10, 25, 47, 0.9);
           border: 1px solid #00e5ff;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 229, 255, 0.4);
-          margin: 0 8px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 229, 255, 0.35);
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
-          white-space: nowrap;
+          margin: 0 8px;
         }
 
-        .laser-pulse {
-          width: 6px;
-          height: 6px;
+        .laser-dot {
+          width: 5px;
+          height: 5px;
           border-radius: 50%;
           background: #00e5ff;
           box-shadow: 0 0 6px #00e5ff;
-          animation: pulse-laser 1.2s infinite ease-in-out;
         }
 
-        .laser-text {
-          font-family: var(--font);
+        .laser-pct {
+          font-family: monospace;
           font-size: 11px;
           font-weight: 700;
-          letter-spacing: 0.05em;
           color: #ffffff;
-        }
-
-        .laser-tick {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-family: monospace;
-          font-size: 9.5px;
-          font-weight: 600;
-          color: #00e5ff;
-          background: rgba(10, 25, 47, 0.85);
-          padding: 2px 8px;
-          border-radius: 4px;
-          border: 0.5px solid rgba(0, 229, 255, 0.3);
-          backdrop-filter: blur(4px);
-        }
-
-        .tick-dot {
-          width: 4px;
-          height: 4px;
-          border-radius: 50%;
-          background: #00e5ff;
-        }
-
-        .progress-completed-stamp {
-          position: absolute;
-          top: 24px;
-          left: 50%;
-          transform: translateX(-50%);
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 18px;
-          border-radius: var(--radius-full);
-          background: rgba(16, 126, 62, 0.9);
-          color: #ffffff;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          box-shadow: 0 4px 16px rgba(16, 126, 62, 0.4);
-          backdrop-filter: blur(8px);
-        }
-
-        .progress-starting-stamp {
-          position: absolute;
-          bottom: 24px;
-          left: 50%;
-          transform: translateX(-50%);
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 18px;
-          border-radius: var(--radius-full);
-          background: rgba(13, 37, 76, 0.9);
-          border: 1px solid rgba(0, 229, 255, 0.4);
-          color: #00e5ff;
-          font-size: 11.5px;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-          backdrop-filter: blur(8px);
-        }
-
-        @keyframes pulse-laser {
-          0%, 100% { transform: scale(0.9); opacity: 0.5; }
-          50% { transform: scale(1.3); opacity: 1; }
-        }
-
-        @media (max-width: 600px) {
-          .laser-tick {
-            display: none;
-          }
+          letter-spacing: 0.02em;
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -313,9 +201,6 @@ export const ProgressOverlay: React.FC<ProgressOverlayProps> = ({
           .progress-built-hatch,
           .progress-laser-line {
             transition: none !important;
-          }
-          .laser-pulse {
-            animation: none !important;
           }
         }
       `}</style>

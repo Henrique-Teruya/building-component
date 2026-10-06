@@ -75,7 +75,6 @@ const PINHEIROS_SVG = `data:image/svg+xml;base64,${Buffer.from(`
   <!-- Base / Lobby / Street Realm -->
   <rect x="200" y="1040" width="600" height="80" fill="#0f172a" />
   <rect x="360" y="1050" width="280" height="70" fill="url(#glassGrad)" opacity="0.9" />
-  <text x="500" y="1090" fill="#ffffff" font-family="Montserrat, sans-serif" font-size="16" font-weight="700" text-anchor="middle" letter-spacing="4">SKR PINHEIROS</text>
 </svg>
 `).toString("base64")}`;
 
@@ -112,8 +111,6 @@ const JARDINS_SVG = `data:image/svg+xml;base64,${Buffer.from(`
   `
     )
     .join("")}
-
-  <text x="500" y="1110" fill="#d97706" font-family="Montserrat, sans-serif" font-size="18" font-weight="700" text-anchor="middle" letter-spacing="4">SKR JARDINS • LORENA</text>
 </svg>
 `).toString("base64")}`;
 
