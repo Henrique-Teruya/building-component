@@ -1,140 +1,202 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { ViewMode, BlueprintState } from "@/lib/building-progress/types";
+import { BLUEPRINT_STYLE_VERSION } from "@/lib/building-progress/blueprint-style";
+import type { BlueprintState, BuildingProgressBlueprintProps, BlueprintGeneratorInput } from "@/lib/building-progress/types";
 import { BlueprintViewer } from "./BlueprintViewer";
 import { BlueprintError } from "./BlueprintError";
-import {
-  ConstructionLoader,
-  BlueprintReveal,
-} from "@/components/blueprint/construction-loader";
-import {
-  UploadCloud,
-  Layers,
-  SlidersHorizontal,
-  FileCode2,
-  Image as ImageIcon,
-} from "lucide-react";
+import { BlueprintScanCover } from "@/components/blueprint/blueprint-scan/BlueprintScanCover";
+import { compositionAspectRatio, preloadDecodedImage, prepareRenderedVisual } from "@/lib/building-progress/prepare-visual";
+import { BlueprintRequestError, requestBlueprint } from "@/lib/building-progress/request-blueprint";
+import { useConstructionProgress } from "./useConstructionProgress";
 
-export interface BuildingProgressBlueprintProps {
-  buildingId?: string;
-  imageUrl?: string;
-  progress?: number; // 0 to 100
-  initialBlueprintUrl?: string;
-  onBlueprintGenerated?: (blueprintUrl: string) => void;
-  onProgressChange?: (progress: number) => void;
-  className?: string;
-  showProgressSlider?: boolean; // Default true
-}
+export type { BuildingProgressBlueprintProps, BlueprintGeneratorInput } from "@/lib/building-progress/types";
 
 export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps> = ({
   buildingId: initialBuildingId = "skr-building-01",
   imageUrl: initialImageUrl,
-  progress: externalProgress = 68,
+  progress: externalProgress = 50,
   initialBlueprintUrl,
   onBlueprintGenerated,
   onProgressChange,
   className = "",
   showProgressSlider = true,
+  generateBlueprint = requestBlueprint,
 }) => {
   const [buildingId, setBuildingId] = useState<string>(initialBuildingId);
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(
     initialImageUrl || null
   );
-  const [blueprintUrl, setBlueprintUrl] = useState<string | null>(
-    initialBlueprintUrl || null
-  );
+  const [blueprintUrl, setBlueprintUrl] = useState<string | null>(null);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [state, setState] = useState<BlueprintState>(
-    initialBlueprintUrl ? "completed" : initialImageUrl ? "processing" : "idle"
+    initialImageUrl ? "generating" : "idle"
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("progress");
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  // Internal progress state synced with external
-  const [currentProgress, setCurrentProgress] = useState<number>(externalProgress);
-
-  useEffect(() => {
-    setCurrentProgress(externalProgress);
-  }, [externalProgress]);
+  const { progress: currentProgress, isAnimating: isProgressAnimating, selectProgress } =
+    useConstructionProgress(externalProgress, state === "ready");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadedFileRef = useRef<File | null>(null);
+  const requestIdRef = useRef(0);
+  const uploadIdRef = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const isCovered = state === "generating" || state === "preparing" || state === "readyToReveal" || state === "revealing";
+  const isHidden = state === "generating" || state === "preparing" || state === "readyToReveal";
 
   const MIN_LOADING_DURATION = 2000;
 
-  // Blueprint generator API call with decoupled state machine & minimum duration
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Strict Mode immediately remounts effects; cancel only a real unmount.
+      queueMicrotask(() => {
+        if (!mountedRef.current) requestController.current?.abort();
+      });
+    };
+  }, []);
+
+  const prepareResult = useCallback(async (imgUrl: string, resultUrl: string, requestId: number, signal: AbortSignal) => {
+    if (requestId !== requestIdRef.current || signal.aborted) return;
+    setState("preparing");
+    const [original, blueprint] = await Promise.all([
+      preloadDecodedImage(imgUrl, signal),
+      preloadDecodedImage(resultUrl, signal),
+    ]);
+    if (requestId !== requestIdRef.current || signal.aborted) return;
+    const ratio = compositionAspectRatio(original, blueprint);
+    setImageAspectRatio(ratio);
+    setBlueprintUrl(resultUrl);
+    onBlueprintGenerated?.(resultUrl);
+  }, [onBlueprintGenerated]);
+
+  // Generation and decoding stay hidden until the composition is ready.
   const triggerGeneration = useCallback(
-    async (imgUrl: string, bId: string, force = false) => {
-      setState("processing");
+    async (imgUrl: string, bId: string, force = false, imageFile?: File) => {
+      const requestId = ++requestIdRef.current;
+      requestController.current?.abort();
+      const controller = new AbortController();
+      requestController.current = controller;
+      setState("generating");
       setErrorMessage(null);
+      setBlueprintUrl(null);
+      setImageAspectRatio(null);
 
       try {
-        const [response] = await Promise.all([
-          fetch("/api/building-blueprint", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              buildingId: bId,
-              imageUrl: imgUrl,
-              force,
-            }),
-          }),
+        const [resultUrl] = await Promise.all([
+          generateBlueprint({ buildingId: bId, imageUrl: imgUrl, file: imageFile, force, signal: controller.signal }),
           new Promise((resolve) => setTimeout(resolve, MIN_LOADING_DURATION)),
         ]);
-
-        const data = await response.json();
-
-        if (!response.ok || data.status === "error") {
-          throw new Error(data.error || "Erro ao processar imagem na IA");
-        }
-
-        if (data.blueprintUrl) {
-          setBlueprintUrl(data.blueprintUrl);
-          setState("revealing");
-          if (onBlueprintGenerated) {
-            onBlueprintGenerated(data.blueprintUrl);
-          }
-        } else {
-          throw new Error("URL de blueprint não recebida do servidor");
-        }
+        await prepareResult(imgUrl, resultUrl, requestId, controller.signal);
       } catch (err: unknown) {
-        console.error("[BuildingProgressBlueprint] Erro:", err);
-        const msg = err instanceof Error ? err.message : "Erro desconhecido";
+        if (requestId !== requestIdRef.current || controller.signal.aborted) return;
+        if (err instanceof BlueprintRequestError) {
+          console.warn("[BuildingProgressBlueprint] Geração recusada:", { status: err.status, code: err.code, message: err.message });
+        } else {
+          console.error("[BuildingProgressBlueprint] Erro:", err);
+        }
+        const msg = err instanceof Error ? err.message : "Não foi possível preparar esta visualização.";
         setErrorMessage(msg);
         setState("error");
       }
     },
-    [onBlueprintGenerated]
+    [generateBlueprint, prepareResult]
   );
 
-  // Initial load if imageUrl is provided
   useEffect(() => {
-    if (initialImageUrl && !blueprintUrl) {
-      setCurrentImageUrl(initialImageUrl);
-      triggerGeneration(initialImageUrl, buildingId);
+    if (state !== "preparing" || !blueprintUrl || !imageAspectRatio || !cardRef.current) return;
+    const controller = new AbortController();
+    const requestId = requestIdRef.current;
+    prepareRenderedVisual(cardRef.current, controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted && requestId === requestIdRef.current) setState("readyToReveal");
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+        console.error("[BuildingProgressBlueprint] Preparation failed:", error);
+        setBlueprintUrl(null);
+        setErrorMessage("Não foi possível preparar esta visualização. Tente novamente.");
+        setState("error");
+      });
+    return () => controller.abort();
+  }, [state, blueprintUrl, imageAspectRatio]);
+
+  const hasInitializedRef = useRef<string | null>(null);
+
+  // Initialize once; refresh the current upload when its rendering style changes.
+  useEffect(() => {
+    if (hasInitializedRef.current !== BLUEPRINT_STYLE_VERSION) {
+      const wasInitialized = hasInitializedRef.current !== null;
+      hasInitializedRef.current = BLUEPRINT_STYLE_VERSION;
+      if (wasInitialized) {
+        if (currentImageUrl === initialImageUrl && initialImageUrl?.startsWith("data:image/svg+xml")) return;
+        if (currentImageUrl) triggerGeneration(currentImageUrl, buildingId, true, uploadedFileRef.current ?? undefined);
+        return;
+      }
+      if (initialImageUrl && initialBlueprintUrl) {
+        const requestId = ++requestIdRef.current;
+        const controller = new AbortController();
+        requestController.current = controller;
+        prepareResult(initialImageUrl, initialBlueprintUrl, requestId, controller.signal).catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error("[BuildingProgressBlueprint] Preparation failed:", error);
+          setErrorMessage("Não foi possível preparar esta visualização. Tente novamente.");
+          setState("error");
+        });
+      } else if (initialImageUrl) {
+        setCurrentImageUrl(initialImageUrl);
+        triggerGeneration(initialImageUrl, initialBuildingId);
+      }
     }
-  }, [initialImageUrl, buildingId, blueprintUrl, triggerGeneration]);
+  }, [initialImageUrl, initialBlueprintUrl, initialBuildingId, triggerGeneration, prepareResult, currentImageUrl, buildingId]);
 
   // Handle file drop or selection
   const handleFileProcess = useCallback(
     (file: File) => {
-      if (!file.type.startsWith("image/")) {
-        alert("Por favor, selecione um arquivo de imagem (PNG, JPEG, WEBP).");
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        setErrorMessage("Selecione uma imagem PNG, JPG ou WEBP.");
+        setState("error");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorMessage("A imagem deve ter no máximo 10 MB.");
+        setState("error");
         return;
       }
 
-      setState("uploading");
+      const uploadId = ++uploadIdRef.current;
+      requestController.current?.abort();
+      requestIdRef.current += 1;
+      setBlueprintUrl(null);
+      setImageAspectRatio(null);
+      setState("generating");
 
       const reader = new FileReader();
       reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        if (!dataUrl) return;
+        if (uploadId !== uploadIdRef.current) return;
+        const dataUrl = e.target?.result;
+        if (typeof dataUrl !== "string") {
+          setErrorMessage("Não foi possível ler a imagem selecionada.");
+          setState("error");
+          return;
+        }
 
-        const newId = `building-${Date.now().toString(36)}`;
+        const newId = `building-${crypto.randomUUID()}`;
+        uploadedFileRef.current = file;
         setBuildingId(newId);
         setCurrentImageUrl(dataUrl);
         setBlueprintUrl(null);
-        triggerGeneration(dataUrl, newId);
+        triggerGeneration(dataUrl, newId, false, file);
+      };
+      reader.onerror = () => {
+        if (uploadId !== uploadIdRef.current) return;
+        setErrorMessage("Não foi possível ler a imagem selecionada.");
+        setState("error");
       };
       reader.readAsDataURL(file);
     },
@@ -144,19 +206,22 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
+    if (!isCovered) setIsDragOver(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+
+    if (isCovered) return;
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileProcess(e.dataTransfer.files[0]);
@@ -167,20 +232,22 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
     if (e.target.files && e.target.files.length > 0) {
       handleFileProcess(e.target.files[0]);
     }
+    // Clear value to allow selecting the same file again
+    e.target.value = "";
   };
 
   const handleProgressSliderChange = (newVal: number) => {
-    setCurrentProgress(newVal);
+    selectProgress(newVal);
     if (onProgressChange) {
       onProgressChange(newVal);
     }
   };
 
-  const PRESETS = [0, 25, 50, 68, 85, 100];
-
   return (
     <div
       className={`skr-blueprint-compact-root ${className} ${isDragOver ? "is-dragging-over" : ""}`}
+      data-building-state={state}
+      aria-busy={isCovered}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -188,187 +255,79 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        accept="image/png,image/jpeg,image/webp"
         style={{ display: "none" }}
         onChange={handleFileInputChange}
       />
 
-      {/* State 1: No Image Loaded Yet -> Clean Drag & Drop Zone */}
-      {!currentImageUrl && (state === "idle" || state === "uploading") && (
-        <div
+      {!currentImageUrl && !isCovered && (
+        <button
+          type="button"
           className="skr-dropzone-box"
           onClick={() => fileInputRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          aria-label="Upload de foto do prédio"
+          aria-label="Enviar imagem do empreendimento"
         >
-          <div className="dropzone-icon-circle">
-            <UploadCloud size={32} />
-          </div>
-          <h3 className="dropzone-title">Solte a foto do prédio aqui</h3>
-          <p className="dropzone-sub">
-            Arraste e solte o arquivo ou <span>clique para navegar</span>
-          </p>
-          <span className="dropzone-tag">PNG • JPG • WEBP</span>
-        </div>
+          Arraste uma imagem ou clique para enviar
+        </button>
+      )}
+      {!currentImageUrl && errorMessage && (
+        <p className="upload-error" role="alert">{errorMessage}</p>
       )}
 
       {/* State 2: Image Loaded -> Main Blueprint Area */}
-      {currentImageUrl && (
-        <div className="skr-blueprint-frame">
-          {/* Header Controls: Modes + Replace Photo */}
-          <div className="blueprint-top-toolbar">
-            <div
-              className="toolbar-modes"
-              style={{
-                opacity: state === "completed" ? 1 : 0.5,
-                pointerEvents: state === "completed" ? "auto" : "none",
-              }}
-            >
-              <button
-                type="button"
-                className={`toolbar-btn ${viewMode === "progress" ? "is-active" : ""}`}
-                onClick={() => setViewMode("progress")}
-              >
-                <Layers size={13} />
-                <span>Progresso</span>
-              </button>
-
-              <button
-                type="button"
-                className={`toolbar-btn ${viewMode === "compare" ? "is-active" : ""}`}
-                onClick={() => setViewMode("compare")}
-              >
-                <SlidersHorizontal size={13} />
-                <span>Comparar</span>
-              </button>
-
-              <button
-                type="button"
-                className={`toolbar-btn ${viewMode === "blueprint" ? "is-active" : ""}`}
-                onClick={() => setViewMode("blueprint")}
-              >
-                <FileCode2 size={13} />
-                <span>Blueprint</span>
-              </button>
-
-              <button
-                type="button"
-                className={`toolbar-btn ${viewMode === "photo" ? "is-active" : ""}`}
-                onClick={() => setViewMode("photo")}
-              >
-                <ImageIcon size={13} />
-                <span>Foto Real</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              className="toolbar-replace-btn"
-              onClick={() => fileInputRef.current?.click()}
-              title="Trocar imagem ou arrastar novo arquivo"
-            >
-              <UploadCloud size={13} />
-              <span>Trocar Foto</span>
-            </button>
-          </div>
-
+      {(currentImageUrl || isCovered) && (
+        <div className="skr-blueprint-frame" ref={cardRef} inert={isCovered} aria-hidden={isCovered} style={{ visibility: isHidden ? "hidden" : "visible", opacity: isHidden ? 0 : 1 }}>
           {/* Visualizer Stage */}
           <div className="blueprint-stage">
-            {/* Decoupled Construction Loader during IA processing */}
-            {state === "processing" && (
-              <ConstructionLoader
-                imageUrl={currentImageUrl}
-                active={true}
-                finishing={false}
-              />
-            )}
-
-            {/* Smooth architectural reveal wipe from photo to blueprint */}
-            {state === "revealing" && blueprintUrl && (
-              <BlueprintReveal
-                originalPhotoUrl={currentImageUrl}
-                blueprintUrl={blueprintUrl}
-                onRevealComplete={() => setState("completed")}
-              />
-            )}
+            {isCovered && !blueprintUrl && <div className="composition-placeholder" />}
 
             {/* Error handling with retry */}
             {state === "error" && (
               <BlueprintError
                 message={errorMessage || undefined}
                 onRetry={() => {
-                  if (currentImageUrl) triggerGeneration(currentImageUrl, buildingId, true);
-                }}
-                onFallbackToPhoto={() => {
-                  setViewMode("photo");
-                  setState("completed");
+                  if (currentImageUrl) triggerGeneration(currentImageUrl, buildingId, true, uploadedFileRef.current ?? undefined);
                 }}
               />
             )}
 
-            {/* Clean Final Viewer after reveal completes */}
-            {state === "completed" && blueprintUrl && (
+            {state !== "error" && blueprintUrl && currentImageUrl && imageAspectRatio && (
               <BlueprintViewer
                 blueprintUrl={blueprintUrl}
                 realPhotoUrl={currentImageUrl}
                 progress={currentProgress}
-                viewMode={viewMode}
-                buildingId={buildingId}
-                onViewModeChange={setViewMode}
+                onImageSelect={() => fileInputRef.current?.click()}
+                aspectRatio={imageAspectRatio}
+                animateProgress={state === "ready" && !isProgressAnimating}
               />
             )}
           </div>
 
-          {/* Drag Overlay Hint when dragging over an existing viewer */}
-          {isDragOver && (
-            <div className="drag-active-scrim">
-              <UploadCloud size={44} className="pulse-icon" />
-              <p>Solte a nova foto para gerar o blueprint</p>
-            </div>
-          )}
-
-          {/* Interactive Percentage Slider Bar */}
-          {showProgressSlider && (
-            <div
-              className="blueprint-slider-bar"
-              style={{
-                opacity: state === "completed" ? 1 : 0.45,
-                pointerEvents: state === "completed" ? "auto" : "none",
-                transition: "opacity 300ms ease",
-              }}
-            >
-              <div className="slider-left">
-                <span className="slider-pct-pill">{currentProgress}%</span>
-              </div>
-
-              <div className="slider-center">
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={currentProgress}
-                  onChange={(e) => handleProgressSliderChange(Number(e.target.value))}
-                  className="blueprint-range"
-                  aria-label="Porcentagem de conclusão da obra"
-                />
-              </div>
-
-              <div className="slider-presets">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`preset-pill ${currentProgress === p ? "is-active" : ""}`}
-                    onClick={() => handleProgressSliderChange(p)}
-                  >
-                    {p}%
-                  </button>
-                ))}
-              </div>
+          {showProgressSlider && state !== "error" && (
+            <div className="blueprint-slider-bar">
+              <input
+                type="range"
+                disabled={state !== "ready"}
+                min="0"
+                max="100"
+                step="any"
+                value={currentProgress}
+                onChange={(event) => handleProgressSliderChange(Math.round(Number(event.target.value)))}
+                className="blueprint-range"
+                aria-label="Porcentagem de conclusão da obra"
+                aria-valuetext={`${Math.round(currentProgress)}% construído`}
+              />
             </div>
           )}
         </div>
+      )}
+
+      {isCovered && (
+        <BlueprintScanCover
+          state={state}
+          onRevealStart={() => setState("revealing")}
+          onRevealComplete={() => setState("ready")}
+        />
       )}
 
       <style jsx>{`
@@ -376,233 +335,72 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
           width: 100%;
           position: relative;
           user-select: none;
+          overflow: visible;
+          isolation: isolate;
         }
 
         .skr-blueprint-compact-root.is-dragging-over {
           outline: 2px dashed var(--brand-primary);
           outline-offset: 4px;
-          border-radius: var(--radius-card);
         }
 
-        /* Dropzone Box */
         .skr-dropzone-box {
           width: 100%;
           min-height: 480px;
-          border: 2px dashed rgba(0, 113, 227, 0.3);
-          border-radius: var(--radius-card);
-          background: #ffffff;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
-          padding: 40px 24px;
+          border: 1px dashed var(--border-subtle);
+          background: transparent;
+          padding: 24px;
+          color: var(--text-muted);
+          font: 500 14px var(--font);
           cursor: pointer;
-          transition: all var(--duration-fast) var(--ease-standard);
-          box-shadow: var(--shadow-card);
         }
 
         .skr-dropzone-box:hover {
           border-color: var(--brand-primary);
-          background: var(--brand-blue-50);
-          transform: translateY(-1px);
-        }
-
-        .dropzone-icon-circle {
-          width: 64px;
-          height: 64px;
-          border-radius: 50%;
-          background: var(--brand-blue-50);
           color: var(--brand-primary);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 4px;
         }
 
-        .dropzone-title {
-          font-family: var(--font);
-          font-size: 19px;
-          font-weight: 700;
-          letter-spacing: -0.02em;
-          color: var(--text-primary);
+        .skr-dropzone-box:focus-visible,
+        .blueprint-range:focus-visible {
+          outline: 2px solid var(--brand-primary);
+          outline-offset: 4px;
         }
 
-        .dropzone-sub {
-          font-family: var(--font);
-          font-size: 13.5px;
-          color: var(--text-secondary);
-        }
-
-        .dropzone-sub span {
-          color: var(--brand-primary);
-          font-weight: 600;
-        }
-
-        .dropzone-tag {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          color: var(--text-muted);
-          background: rgba(0, 0, 0, 0.04);
-          padding: 3px 10px;
-          border-radius: var(--radius-full);
-          margin-top: 8px;
-        }
-
-        /* Main Blueprint Container */
         .skr-blueprint-frame {
           width: 100%;
-          border-radius: var(--radius-card);
-          background: #ffffff;
-          border: 0.5px solid rgba(0, 0, 0, 0.06);
-          box-shadow: var(--shadow-card);
-          overflow: hidden;
+          background: transparent;
           display: flex;
           flex-direction: column;
-          gap: 12px;
-          padding: 16px;
-        }
-
-        .blueprint-top-toolbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .toolbar-modes {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: var(--neutral-100);
-          padding: 3px;
-          border-radius: var(--radius-full);
-        }
-
-        .toolbar-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 14px;
-          border-radius: var(--radius-full);
-          font-family: var(--font);
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          transition: all var(--duration-fast) var(--ease-standard);
-        }
-
-        .toolbar-btn:hover {
-          color: var(--text-primary);
-        }
-
-        .toolbar-btn.is-active {
-          color: #ffffff;
-          background: var(--brand-primary);
-          box-shadow: 0 2px 6px rgba(0, 113, 227, 0.25);
-        }
-
-        .toolbar-replace-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 14px;
-          border-radius: var(--radius-full);
-          font-family: var(--font);
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          background: var(--neutral-100);
-          border: 1px solid var(--border-subtle);
-          cursor: pointer;
-          transition: all var(--duration-fast);
-        }
-
-        .toolbar-replace-btn:hover {
-          color: var(--brand-primary);
-          border-color: var(--brand-primary);
-          background: #ffffff;
+          gap: 16px;
+          transition: opacity 400ms var(--ease-standard);
         }
 
         .blueprint-stage {
           position: relative;
           width: 100%;
-          border-radius: var(--radius-card);
           overflow: hidden;
         }
 
-        .drag-active-scrim {
-          position: absolute;
-          inset: 0;
-          background: rgba(0, 113, 227, 0.92);
-          backdrop-filter: blur(8px);
-          z-index: 100;
-          border-radius: var(--radius-card);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
-          color: #ffffff;
-          font-weight: 700;
-          font-size: 16px;
-          pointer-events: none;
+        .composition-placeholder { height: 560px; }
+
+        .upload-error {
+          margin-top: 12px;
+          color: var(--feedback-danger);
+          font: 600 13px var(--font);
+          text-align: center;
         }
 
-        .pulse-icon {
-          animation: pulse-icon 1s infinite alternate;
-        }
-
-        /* Slider Controls Bar */
-        .blueprint-slider-bar {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 10px 14px;
-          background: var(--neutral-50);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-control);
-          flex-wrap: wrap;
-        }
-
-        .slider-left {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          min-width: 110px;
-        }
-
-        .slider-pct-pill {
-          font-size: 16px;
-          font-weight: 800;
-          color: var(--brand-primary);
-          line-height: 1;
-        }
-
-        .slider-pct-label {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.05em;
-          color: var(--text-secondary);
-        }
-
-        .slider-center {
-          flex: 1;
-          min-width: 160px;
-        }
+        .blueprint-slider-bar { padding: 10px 0; }
 
         .blueprint-range {
+          display: block;
           width: 100%;
           height: 6px;
+          border: 0;
           border-radius: 3px;
           background: var(--neutral-300);
-          outline: none;
           -webkit-appearance: none;
+          appearance: none;
           cursor: pointer;
         }
 
@@ -613,62 +411,25 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
           border-radius: 50%;
           background: var(--brand-primary);
           box-shadow: 0 2px 6px rgba(0, 113, 227, 0.4);
-          cursor: pointer;
-          border: 2px solid #ffffff;
-          transition: transform 150ms;
+          border: 2px solid var(--surface-canvas);
         }
 
-        .blueprint-range::-webkit-slider-thumb:hover {
-          transform: scale(1.15);
-        }
-
-        .slider-presets {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .preset-pill {
-          padding: 3px 8px;
-          border-radius: var(--radius-full);
-          border: 1px solid var(--border-subtle);
-          background: #ffffff;
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--text-secondary);
-          cursor: pointer;
-          font-family: var(--font);
-          transition: all 150ms;
-        }
-
-        .preset-pill:hover {
-          border-color: var(--brand-primary);
-          color: var(--brand-primary);
-        }
-
-        .preset-pill.is-active {
+        .blueprint-range::-moz-range-thumb {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
           background: var(--brand-primary);
-          border-color: var(--brand-primary);
-          color: #ffffff;
+          box-shadow: 0 2px 6px rgba(0, 113, 227, 0.4);
+          border: 2px solid var(--surface-canvas);
         }
 
-        @keyframes pulse-icon {
-          from { transform: scale(0.9); }
-          to { transform: scale(1.1); }
+        @media (prefers-reduced-motion: reduce) {
+          .skr-blueprint-frame { transition-duration: 150ms; }
         }
 
-        @media (max-width: 680px) {
-          .blueprint-slider-bar {
-            flex-direction: column;
-            align-items: stretch;
-            gap: 10px;
-          }
-          .slider-left {
-            justify-content: space-between;
-          }
-          .slider-presets {
-            justify-content: space-between;
-          }
+        @media (max-width: 600px) {
+          .composition-placeholder { height: 420px; }
+          .skr-dropzone-box { min-height: 420px; }
         }
       `}</style>
     </div>

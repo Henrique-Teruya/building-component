@@ -1,36 +1,23 @@
-"use client";
-
-import React from "react";
 import { BuildingProgressBlueprint } from "@/components/building-progress";
 import { MOCK_BUILDINGS } from "@/lib/building-progress/mock-buildings";
+import { createDevelopmentBlueprintUrl } from "@/lib/magic-hour/generate-blueprint";
+import styles from "./page.module.css";
 
-export default function Home() {
+export default async function Home() {
   const defaultBuilding = MOCK_BUILDINGS[0]; // SKR Pinheiros (default)
+  // Opening the playground never submits its synthetic example to the paid API.
+  const blueprintUrl = await createDevelopmentBlueprintUrl(defaultBuilding.id, defaultBuilding.name, defaultBuilding.imageUrl);
 
   return (
-    <main className="lean-page-wrapper">
-      <div className="component-host">
+    <main className={styles.page}>
+      <div className={styles.host}>
         <BuildingProgressBlueprint
           buildingId={defaultBuilding.id}
           imageUrl={defaultBuilding.imageUrl}
           progress={defaultBuilding.progress}
+          initialBlueprintUrl={blueprintUrl}
         />
       </div>
-
-      <style jsx>{`
-        .lean-page-wrapper {
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 32px 16px;
-        }
-
-        .component-host {
-          width: 100%;
-          max-width: 920px;
-        }
-      `}</style>
     </main>
   );
 }

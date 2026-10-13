@@ -11,7 +11,7 @@ baseado no `@skwizlab/ui` do Skill.
 ## Visão Geral
 
 - **Modo**: Light mode apenas
-- **Fonte**: Montserrat (Google Fonts)
+- **Fonte**: Montserrat (interface) e Barlow Condensed bold (percentual construído)
 - **Cor principal**: `#0071e3` (Brand Blue)
 - **Border radius**: 20px (cards), 12px (controles), 9999px (pill)
 - **Estilo**: Clean, minimalista, com sombras sutis e blur effects
@@ -299,6 +299,23 @@ background-size: 40px 40px;
 - Convenções obrigatórias para agentes: `AGENTS.md` § Design System
 
 ## Exemplo de Uso
+
+### Cobertura de preparação do empreendimento
+
+A área do componente é transparente, sem card, borda ou sombra. A composição foto/blueprint, o percentual e a barra contínua se integram diretamente ao fundo do produto; a grade SKR aparece entre os traços. Não há abas, atalhos ou botões superiores. A imagem é o ponto de envio: aceita clique, teclado e arrastar/soltar para substituir o arquivo e começar a geração automaticamente.
+
+A preparação ocupa a área do componente com uma ilustração técnica detalhada sobre o próprio fundo do produto, sem superfície ou grade adicional. São 14 pavimentos com janelas, montantes, varandas, lajes, estrutura interna, cobertura e cotas finas. Nas duas extremidades verticais, sete fios paralelos têm pontas arredondadas e um perfil cilíndrico em azul SKR com destaque azul 100. Todas as outras linhas permanecem finas. Uma única linha azul faz uma varredura contínua. O desenho mantém sua proporção; o conteúdo final permanece invisível e sem interação durante geração, decodificação e preparação.
+
+O blueprint final é um PNG transparente composto somente por traços em azul SKR 500, com destaques em azul 100. O destaque segue os cantos externos dos volumes retangulares principais: sete fios finos agrupados, pontas arredondadas e um leve perfil cilíndrico. Duas partes principais projetadas para a frente recebem quatro feixes, um par por parte. Montantes, brises, divisões verticais de fachada, colunas internas, linhas horizontais, janelas e varandas permanecem finos. O visualizador não acrescenta fundo ou grade. A composição de foto e blueprint usa um fade de 7% nas laterais e 6% no topo e na base, com interseção das máscaras para suavizar também os cantos; o centro permanece nítido.
+
+Original e blueprint compartilham o mesmo enquadramento. A máscara real de progresso e os controles já estão montados antes da saída do scan. A revelação usa fades simultâneos: o scan sai e o resultado aparece, sem transformar a foto ou animar a montagem do resultado.
+
+O percentual construído é a informação principal: um número alto em Barlow Condensed bold e azul SKR ao lado da imagem, sem legenda. A tipografia usa 28% da largura do componente, com teto de 22rem, e alongamento vertical de 35% para enfatizar sua altura. O palco divide a largura igualmente entre imagem e indicador, acomodando o valor de 100%. O símbolo de porcentagem é menor e alinhado à base dos números. A fonte é servida localmente e usa o token `--font-progress-display`; Montserrat continua na interface. O tamanho acompanha a largura do componente. A linha que delimita a faixa construída não tem texto; o slider também não repete o percentual atual.
+
+O scan reutiliza o azul de marca. Há apenas uma animação em loop, feita com transform e opacity; não há porcentagem de processamento. O desenho se adapta ao mobile sem overflow horizontal. Movimento reduzido mantém a linha estática e encurta os fades para 150 ms.
+
+Fluxo e barreiras de preparação: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 
 ```html
 <div class="card">

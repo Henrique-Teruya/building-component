@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { BlueprintGenerationError } from "@/lib/magic-hour/blueprint-error";
 import {
   generateBuildingBlueprint,
   getCachedBlueprint,
 } from "@/lib/magic-hour/generate-blueprint";
+
+export const runtime = "nodejs";
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_REQUEST_BYTES = 14 * 1024 * 1024;
 
 // Zod schema for request validation
 const RequestSchema = z.object({
@@ -14,6 +19,7 @@ const RequestSchema = z.object({
   imageUrl: z
     .string()
     .min(1, { message: "imageUrl é obrigatório" })
+    .max(MAX_REQUEST_BYTES)
     .refine(
       (val) =>
         val.startsWith("http://") ||
@@ -32,7 +38,39 @@ const RequestSchema = z.object({
  */
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.json();
+    const declaredLength = Number(req.headers.get("content-length"));
+    if (declaredLength > MAX_REQUEST_BYTES) {
+      return NextResponse.json(
+        { status: "error", error: "A imagem deve ter no máximo 10 MB." },
+        { status: 413 }
+      );
+    }
+
+    let rawBody: unknown;
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const file = form.get("imageFile");
+      if (!(file instanceof File) || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        return NextResponse.json(
+          { status: "error", error: "Envie uma imagem PNG, JPG ou WEBP." },
+          { status: 400 }
+        );
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        return NextResponse.json(
+          { status: "error", error: "A imagem deve ter no máximo 10 MB." },
+          { status: 413 }
+        );
+      }
+      const imageUrl = `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`;
+      rawBody = {
+        buildingId: form.get("buildingId"),
+        imageUrl,
+        force: form.get("force") === "true",
+      };
+    } else {
+      rawBody = await req.json();
+    }
     const parseResult = RequestSchema.safeParse(rawBody);
 
     if (!parseResult.success) {
@@ -84,12 +122,17 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (error: unknown) {
+    if (error instanceof BlueprintGenerationError) {
+      return NextResponse.json(
+        { status: "error", code: error.code, error: error.message },
+        { status: error.status }
+      );
+    }
     console.error("[POST /api/building-blueprint] Error:", error);
-    const message = error instanceof Error ? error.message : "Erro interno no servidor";
     return NextResponse.json(
       {
         status: "error",
-        error: message,
+        error: "Não foi possível gerar o blueprint. Tente novamente.",
       },
       { status: 500 }
     );

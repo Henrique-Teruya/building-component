@@ -4,6 +4,14 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap');
 
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-bold-latin.woff2") format("woff2");
+}
+
 :root {
   /* Primitivas de Cor */
   --brand-blue-500: #0071e3;
@@ -28,6 +36,10 @@
   --surface-card: var(--neutral-50);
   --surface-elevated: var(--neutral-0);
   --surface-sunken: var(--neutral-100);
+  --canvas-grid:
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+  --canvas-grid-size: 40px 40px;
   
   --text-primary: var(--neutral-950);
   --text-secondary: var(--neutral-500);
@@ -76,6 +88,7 @@
 
   /* Tipografia */
   --font: "Montserrat", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-progress-display: "Barlow Condensed", "Arial Narrow", var(--font);
 }
 
 * {
@@ -94,10 +107,8 @@ body {
 
 /* Background grid sutil do SKR Design System */
 .skr-grid-background {
-  background-image: 
-    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
-  background-size: 40px 40px;
+  background-image: var(--canvas-grid);
+  background-size: var(--canvas-grid-size);
 }
 
 /* Ambient Backdrop Blobs */

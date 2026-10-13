@@ -120,7 +120,7 @@ export const MOCK_BUILDINGS: BuildingData[] = [
     name: "SKR Pinheiros",
     location: "Rua dos Pinheiros, 850 — São Paulo, SP",
     imageUrl: PINHEIROS_SVG,
-    progress: 68,
+    progress: 50,
     lastUpdated: "Hoje, 11:30",
     deliveryForecast: "Novembro / 2026",
     phases: [
@@ -136,7 +136,7 @@ export const MOCK_BUILDINGS: BuildingData[] = [
     name: "SKR Jardins",
     location: "Alameda Lorena, 1420 — Jardins, SP",
     imageUrl: JARDINS_SVG,
-    progress: 92,
+    progress: 50,
     lastUpdated: "Ontem, 16:45",
     deliveryForecast: "Abril / 2026",
     phases: [
@@ -152,7 +152,7 @@ export const MOCK_BUILDINGS: BuildingData[] = [
     name: "SKR Moema Arte",
     location: "Av. Ibirapuera, 2100 — Moema, SP",
     imageUrl: PINHEIROS_SVG,
-    progress: 35,
+    progress: 50,
     lastUpdated: "Há 2 dias",
     deliveryForecast: "Março / 2027",
     phases: [
@@ -168,7 +168,7 @@ export const MOCK_BUILDINGS: BuildingData[] = [
     name: "SKR Vila Mariana",
     location: "Rua Domingos de Morais, 1200 — SP",
     imageUrl: PINHEIROS_SVG,
-    progress: 0,
+    progress: 50,
     lastUpdated: "Esta semana",
     deliveryForecast: "Dezembro / 2027",
     phases: [

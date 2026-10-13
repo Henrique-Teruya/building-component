@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./skr-theme.css";
+import StyledJsxRegistry from "./registry";
 
 export const metadata: Metadata = {
   title: "SKR • Acompanhamento de Obras & Blueprint",
@@ -18,7 +19,7 @@ export default function RootLayout({
           <div className="skr-ambient-blob skr-ambient-blob-1" />
           <div className="skr-ambient-blob skr-ambient-blob-2" />
         </div>
-        {children}
+        <StyledJsxRegistry>{children}</StyledJsxRegistry>
       </body>
     </html>
   );

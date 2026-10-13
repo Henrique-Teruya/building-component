@@ -18,31 +18,35 @@ export interface BuildingData {
   phases?: BuildingPhase[];
 }
 
-export type ViewMode = "progress" | "compare" | "blueprint" | "photo";
-
 export type BlueprintStatus = "idle" | "loading" | "generating" | "completed" | "error";
 
 export type BlueprintState =
   | "idle"
-  | "uploading"
-  | "processing"
+  | "generating"
+  | "preparing"
+  | "readyToReveal"
   | "revealing"
-  | "completed"
+  | "ready"
   | "error";
 
 export interface BuildingProgressBlueprintProps {
   buildingId?: string;
   imageUrl?: string;
   progress?: number; // Real percentage from SKR backend (0-100)
-  projectName?: string;
-  location?: string;
-  phases?: BuildingPhase[];
   initialBlueprintUrl?: string;
   onBlueprintGenerated?: (blueprintUrl: string) => void;
   onProgressChange?: (progress: number) => void;
   className?: string;
   showProgressSlider?: boolean;
-  defaultViewMode?: ViewMode;
+  generateBlueprint?: (input: BlueprintGeneratorInput) => Promise<string>;
+}
+
+export interface BlueprintGeneratorInput {
+  buildingId: string;
+  imageUrl: string;
+  file?: File;
+  force: boolean;
+  signal: AbortSignal;
 }
 
 export interface BlueprintGenerationRequest {
