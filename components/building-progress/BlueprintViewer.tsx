@@ -1,6 +1,7 @@
 "use client";
 
 import { ProgressComposition } from "./ProgressComposition";
+import type { ConstructionReveal } from "@/lib/building-progress/progress-animation";
 
 interface BlueprintViewerProps {
   blueprintUrl: string;
@@ -9,6 +10,8 @@ interface BlueprintViewerProps {
   aspectRatio: number;
   animateProgress?: boolean;
   onImageSelect: () => void;
+  reveal?: ConstructionReveal | null;
+  onRevealComplete?: (runId: number) => void;
 }
 
 export function BlueprintViewer({
@@ -18,6 +21,8 @@ export function BlueprintViewer({
   aspectRatio,
   animateProgress = true,
   onImageSelect,
+  reveal = null,
+  onRevealComplete,
 }: BlueprintViewerProps) {
   const builtProgress = Number.isFinite(progress) ? Math.min(100, Math.max(0, progress)) : 0;
   const displayedPercentage = Math.round(builtProgress);
@@ -36,6 +41,8 @@ export function BlueprintViewer({
           aspectRatio={aspectRatio}
           progress={builtProgress}
           animateProgress={animateProgress}
+          reveal={reveal}
+          onRevealComplete={onRevealComplete}
         />
       </button>
 

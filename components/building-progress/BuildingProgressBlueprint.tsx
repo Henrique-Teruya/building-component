@@ -35,7 +35,7 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  const { progress: currentProgress, isAnimating: isProgressAnimating, selectProgress } =
+  const { progress: currentProgress, isAnimating: isProgressAnimating, selectProgress, reveal, finishReveal } =
     useConstructionProgress(externalProgress, state === "ready");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -299,6 +299,8 @@ export const BuildingProgressBlueprint: React.FC<BuildingProgressBlueprintProps>
                 onImageSelect={() => fileInputRef.current?.click()}
                 aspectRatio={imageAspectRatio}
                 animateProgress={state === "ready" && !isProgressAnimating}
+                reveal={reveal}
+                onRevealComplete={finishReveal}
               />
             )}
           </div>

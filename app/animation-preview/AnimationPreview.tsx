@@ -10,6 +10,7 @@ interface AnimationPreviewProps {
 
 export function AnimationPreview({ originalPhotoUrl, blueprintUrl }: AnimationPreviewProps) {
   const [run, setRun] = useState(0);
+  const [previewProgress, setPreviewProgress] = useState(50);
   const [waiting, setWaiting] = useState(false);
   const pending = useRef<{ resolve: (url: string) => void; reject: (error: Error) => void } | null>(null);
   const generateBlueprint = useCallback(({ signal }: BlueprintGeneratorInput) => new Promise<string>((resolve, reject) => {
@@ -36,21 +37,28 @@ export function AnimationPreview({ originalPhotoUrl, blueprintUrl }: AnimationPr
     <main className="animation-preview-page">
       <header className="preview-heading">
         <h1>Prévia do scan blueprint</h1>
-        <p>O scanner revela o blueprint em 0%, seguido pelo avanço até 50%.</p>
+        <p>O scanner revela o blueprint em 0%, seguido pelo avanço até {previewProgress}%.</p>
       </header>
       <div className="preview-actions">
         <button className="skr-btn skr-btn-primary" disabled={!waiting} onClick={() => pending.current?.resolve(blueprintUrl)}>Revelar resultado</button>
         <button className="skr-btn skr-btn-secondary" disabled={!waiting} onClick={() => pending.current?.reject(new Error("Não foi possível preparar esta visualização. Tente novamente."))}>Simular falha</button>
         <button className="skr-btn skr-btn-secondary" onClick={() => setRun((previous) => previous + 1)}>Repetir</button>
+        <label className="preview-progress-control" htmlFor="preview-progress">Percentual de teste
+          <select id="preview-progress" value={previewProgress} onChange={(event) => setPreviewProgress(Number(event.target.value))}>
+            {[0, 5, 25, 50, 100].map((value) => <option key={value} value={value}>{value}%</option>)}
+          </select>
+        </label>
       </div>
       <div className="preview-component">
-        <BuildingProgressBlueprint key={run} imageUrl={originalPhotoUrl} progress={50} generateBlueprint={generateBlueprint} />
+        <BuildingProgressBlueprint key={run} imageUrl={originalPhotoUrl} progress={previewProgress} generateBlueprint={generateBlueprint} />
       </div>
       <style jsx>{`
         .animation-preview-page { max-width: 952px; margin: 48px auto; padding: 0 32px; }
         .preview-heading h1 { font: 700 20px var(--font); letter-spacing: -.03em; margin: 0 0 8px; }
         .preview-heading p { font: 400 13px var(--font); color: var(--text-muted); margin: 0; }
         .preview-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+        .preview-progress-control { display: flex; align-items: center; gap: 8px; font: 500 12px var(--font); color: var(--text-muted); margin-left: 8px; }
+        .preview-progress-control select { font: inherit; color: var(--text-primary); background: transparent; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px; }
         .preview-component { margin-top: 32px; margin-bottom: 32px; }
         @media (max-width: 600px) {
           .animation-preview-page { margin-top: 32px; padding-inline: 20px; }

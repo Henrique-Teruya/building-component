@@ -28,7 +28,7 @@ export function BlueprintScanCover({ state, onRevealStart, onRevealComplete }: B
 
   return (
     <div className={`blueprint-scan-cover ${state === "revealing" ? "is-revealing" : ""}`} data-cover-state={state}>
-      <BlueprintScan />
+      <BlueprintScan finishing={state === "readyToReveal" || state === "revealing"} />
       <style jsx>{`
         .blueprint-scan-cover {
           position: absolute;

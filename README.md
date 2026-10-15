@@ -27,7 +27,7 @@ Magic Hour SDK (AI Image Editor / modelo compatível com o plano)
         ▼
 Blueprint Canônico Gerado (armazenado/cacheado)
         ├── PNG RGBA com fundo transparente
-        └── Extremidades verticais com feixes cilíndricos azul claro
+        └── Traços finos e uniformes em azul SKR
         │
         ▼
 BuildingProgressBlueprint (Client Rendering)
@@ -77,25 +77,29 @@ MAGIC_HOUR_API_KEY= pnpm dev
 
 Para gerar pela IA, use `pnpm dev` com a chave válida e saldo suficiente na conta Magic Hour. Consulte as [restrições de modelos e resolução](https://docs.magichour.ai/api-reference/models). Erros de autenticação, limite de requisições e falha de geração têm códigos próprios; nenhuma resposta bruta do provedor ou credencial é enviada ao navegador.
 
-O blueprint contém somente linhas sobre transparência real, usando o azul SKR `#0071e3` com destaques `#dbeafe`. O destaque acompanha as arestas externas dos volumes retangulares principais projetados para a frente: duas fachadas principais têm quatro feixes, um par por volume. Cada feixe reúne sete linhas finas, com pontas arredondadas e perfil cilíndrico discreto. Montantes, brises, colunas internas, divisões de painéis, janelas e varandas permanecem finos, mesmo quando atravessam vários pavimentos. O componente não usa card: não tem superfície, borda ou sombra, e se integra diretamente ao fundo do produto. Uma máscara suave esmaece as quatro bordas e os cantos da composição, mantendo seu centro nítido. A grade SKR aparece entre os traços; slider e scan não acrescentam painéis ou grades adicionais.
+O blueprint contém somente linhas finas e uniformes sobre transparência real, usando o azul SKR `#0071e3`. Arestas, estrutura, janelas e varandas seguem a mesma linguagem de traços, sem realce grosso nas extremidades. O componente não usa card: não tem superfície, borda ou sombra, e se integra diretamente ao fundo do produto. Uma máscara suave esmaece as quatro bordas e os cantos da composição, mantendo seu centro nítido. A grade SKR aparece entre os traços; slider e scan não acrescentam painéis ou grades adicionais.
 
 A interface final contém apenas a composição foto/blueprint, o percentual e a barra contínua. Não há abas, atalhos, botões superiores ou controle de tela cheia. Arraste uma imagem para o componente ou clique na imagem para enviar ou substituir o arquivo; o processamento começa automaticamente. Sem imagem inicial, aparece somente uma área de envio com uma instrução curta. O upload também funciona pelo teclado.
 
-A saída da IA passa por remoção do fundo e de preenchimentos internos antes de virar PNG RGBA. A prévia local usa os pixels da foto enviada; URLs remotas exigem a IA configurada. O cache inclui a versão do estilo, evitando reaproveitar imagens antigas com fundo escuro. Ao usar `initialBlueprintUrl` ou um adaptador externo, forneça uma imagem transparente no mesmo enquadramento da foto.
+A IA desenha todos os traços com espessura fina e uniforme. O servidor remove o fundo e os preenchimentos sólidos e aplica a cor SKR, preservando os contornos recebidos. O processamento não analisa faces nem redesenha arestas. A prévia local usa os pixels da foto enviada; URLs remotas exigem a IA configurada. O cache inclui versões separadas de estilo e processamento; mudar somente o processamento invalida pedidos futuros sem regenerar a foto montada. Ao usar `initialBlueprintUrl` ou um adaptador externo, forneça uma imagem transparente no mesmo enquadramento da foto.
 
 Na geração por IA, o servidor corrige a orientação EXIF e encaixa a foto inteira em um canvas com proporção suportada, usando somente margens brancas adicionais. A requisição envia essa proporção explicitamente. Na saída, o servidor compensa o arredondamento de resolução do modelo (até 16 pixels por eixo) e remove apenas as margens que adicionou. A composição conserva a proporção da foto e o limite de validação de 1%; um canvas de proporção incompatível continua sendo rejeitado.
 
-O upload aceita PNG, JPG e WEBP até 10 MB. Durante a geração e preparação, a área inteira do componente é ocupada por um scan blueprint transparente: desenho técnico e uma linha azul em varredura contínua sobre o fundo do produto. O desenho de carregamento tem 14 pavimentos, janelas com montantes, varandas, lajes, estrutura interna, cobertura e cotas finas. Somente as extremidades verticais recebem os sete fios arredondados, com o mesmo perfil cilíndrico azul SKR do resultado. A ilustração de preparação mantém sua proporção e não representa um percentual de processamento. Imagens e porcentagem permanecem ocultas.
+O upload aceita PNG, JPG e WEBP até 10 MB. Durante a geração e preparação, a área inteira do componente é ocupada por um scan blueprint transparente: desenho técnico e uma linha azul em varredura contínua sobre o fundo do produto. O desenho de carregamento tem 14 pavimentos, janelas com montantes, varandas, lajes, estrutura interna, cobertura e cotas finas. Uma faixa suave acompanha o scanner: todas as linhas ficam temporariamente mais escuras, em azul SKR de contraste, e ligeiramente mais espessas, retornando ao normal depois da passagem. O robô construtor trabalha em quatro pontos, com marteladas rápidas e deslocamentos curtos de 100–130 ms. A ilustração de preparação mantém sua proporção e não representa um percentual de processamento. Imagens e porcentagem permanecem ocultas.
 
-A saída começa somente depois de original e blueprint serem carregados e decodificados e de duas etapas de pintura estabilizarem o layout. Fades simultâneos de 400 ms retiram o scan e revelam somente o blueprint, com número e barra em 0%. Após uma pausa de 200 ms, foto, número e slider avançam juntos até o percentual real em 1,4 segundo, com desaceleração suave. A foto aparece de baixo para cima, preservando o alinhamento com o blueprint. Todos os exemplos usam 50%; a prop `progress` continua aceitando o valor real do empreendimento. Esse avanço representa a parte construída, sem simular um percentual do processamento por IA.
+Na composição final, o mesmo destaque percorre somente a parte do blueprint ainda não construída, sem exibir uma linha de scanner. O efeito visual usa a imagem já carregada, sem nova geração nem análise de arestas, e respeita a preferência de movimento reduzido. Em 100%, a camada de destaque deixa de ser exibida.
 
-Uma nova geração volta à apresentação em 0%. Alterações do percentual externo durante o avanço continuam a partir do valor visível até o novo destino. Ajustar a barra interrompe a animação e assume o valor escolhido; `onProgressChange` é chamado apenas por essa interação, nunca pelos quadros da animação. A substituição da imagem e o unmount cancelam qualquer avanço pendente.
+A saída começa somente depois de original e blueprint serem carregados e decodificados e de duas etapas de pintura estabilizarem o layout. Fades simultâneos de 400 ms retiram o scan e revelam somente o blueprint, com número e barra em 0%. Foto, número e slider avançam juntos até o percentual real, com desaceleração suave. A duração acompanha a distância percorrida: 5% leva 320 ms, 25% leva 800 ms, 50% leva 1,4 segundo e 100% leva 2,6 segundos. A pausa inicial também acompanha o percentual, entre 60 e 200 ms. Em 0%, o blueprint permanece sozinho. A foto aparece de baixo para cima, preservando o alinhamento com o blueprint. O exemplo padrão usa 50%; a prop `progress` aceita o valor real do empreendimento. Esse avanço representa a parte construída, sem simular um percentual do processamento por IA.
+
+Na primeira revelação de cada resultado, o robô acompanha a divisão entre foto e blueprint, usando o mesmo relógio que movimenta a composição. A coreografia cabe no tempo disponível: em 5%, dá uma martelada em um ponto; em 25%, três marteladas em dois pontos; em 50%, seis em quatro pontos; em 100%, oito em oito pontos. Quanto maior o avanço, mais ele muda de posição. O ritmo acompanha a subida: trabalha e troca de ponto mais rápido no começo, depois desacelera com a fronteira perto do destino. Ao chegar ao destino, abaixa o martelo, faz um joinha com a mão livre e um pequeno aceno de cabeça, depois desaparece suavemente. A confirmação dura de 220 a 450 ms e a saída de 80 a 150 ms; o percentual já está estabilizado durante esse gesto. A animação usa o desenho atual do robô e não acrescenta trabalho à geração da imagem.
+
+Uma nova geração volta à apresentação em 0%. Alterações do percentual externo durante o avanço continuam a partir do valor visível até o novo destino, com duração proporcional à diferença. Ajustar a barra interrompe a animação e assume o valor escolhido; `onProgressChange` é chamado apenas por essa interação, nunca pelos quadros da animação. Interação com a barra, alteração do destino, substituição da imagem ou ativação de movimento reduzido cancelam a sequência do robô sem gesto de confirmação. A substituição da imagem e o unmount cancelam qualquer avanço pendente.
 
 O percentual real construído aparece ao lado da imagem, sem legenda, em Barlow Condensed bold: uma tipografia alta e impactante, com o símbolo de porcentagem menor. A linha que delimita a parte construída fica sem texto. Ocultar o slider com `showProgressSlider={false}` mantém o indicador principal visível. Ao incorporar o componente, leve também os arquivos de `public/fonts/` e o token `--font-progress-display` do tema.
 
-Para revisar a animação, abra `/animation-preview` com `pnpm run dev`. Essa prévia usa imagens locais: mantém o processamento em loop até “Revelar resultado”, oferece “Simular falha” e permite repetir. Não chama a API de IA.
+Para revisar a animação, abra `/animation-preview` com `pnpm run dev`. Essa prévia usa imagens locais: mantém o processamento em loop até “Revelar resultado”, oferece “Simular falha” e permite repetir. Um seletor disponível somente nessa rota permite conferir a revelação em diferentes percentuais; o exemplo padrão continua em 50%. Não chama a API de IA.
 
-A cobertura respeita os limites do componente em desktop e mobile. A varredura e a revelação da foto usam transform e opacity. Com `prefers-reduced-motion`, a linha fica estática, os fades duram 150 ms e, depois de mostrar 0%, o resultado assume o percentual real sem varredura gradual.
+A cobertura respeita os limites do componente em desktop e mobile. A varredura e a revelação da foto usam transform e opacity. Com `prefers-reduced-motion`, a linha e o robô do carregamento ficam estáticos, os fades duram 150 ms e, depois de mostrar 0%, o resultado assume o percentual real sem avanço gradual nem robô de revelação.
 
 ### 2. Uso no seu componente ou página
 
@@ -136,14 +140,17 @@ components/
     ├── BuildingProgressBlueprint.tsx   # Componente pai e orquestrador
     ├── BlueprintViewer.tsx             # Composição, upload pela imagem e percentual
     ├── ProgressComposition.tsx         # Enquadramento compartilhado das imagens
-    ├── ProgressOverlay.tsx             # Overlay de nível laser e revelação da construção
+    ├── ProgressOverlay.tsx             # Linha divisória e revelação da construção
+    ├── RevealWorker.tsx                # Trabalho e confirmação durante a revelação
     ├── BlueprintSkeleton.tsx           # Export compatível do scan blueprint
     ├── BlueprintError.tsx              # Feedback de erro e ação de tentar novamente
     └── index.ts                        # Exports públicos
 
 components/blueprint/blueprint-scan/
     ├── BlueprintScan.tsx               # Desenho técnico e varredura minimalista
-    └── BlueprintScanCover.tsx          # Cobertura e fade após preparação
+    ├── BlueprintScanCover.tsx          # Cobertura e fade após preparação
+    ├── ScanWorker.tsx                  # Movimento e marteladas durante o carregamento
+    └── WorkerRobot.tsx                 # Ilustração do robô construtor
 
 lib/
 ├── magic-hour/
@@ -152,7 +159,8 @@ lib/
 │   └── prompts.ts                     # Prompt restritivo de preservação geométrica
 └── building-progress/
     ├── types.ts                       # Tipos TypeScript do domínio
-    ├── blueprint-linework.ts          # Transparência e hierarquia de traços
+    ├── blueprint-linework.ts          # Extração de traços e PNG transparente
+    ├── blueprint-processing.ts        # Versão do processamento no servidor
     ├── prepare-visual.ts              # Decodificação e barreira antes do reveal
     └── mock-buildings.ts              # Empreendimentos de demonstração (Pinheiros, Jardins...)
 
@@ -165,7 +173,8 @@ app/
 └── skr-theme.css                      # Tokens canônicos do SKR Design System (DESIGN.md)
 
 test/
-└── building-progress.test.ts          # Testes unitários (hash, prompt, cache, limites 0-100%)
+├── building-progress.test.ts          # Fluxo, prompt, cache, enquadramento e integração
+└── blueprint-linework.test.ts         # Traços, transparência e preservação geométrica
 ```
 
 ---

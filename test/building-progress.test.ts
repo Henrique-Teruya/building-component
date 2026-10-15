@@ -7,7 +7,7 @@ import { NextRequest } from "next/server";
 import { POST } from "../app/api/building-blueprint/route";
 import { MOCK_BUILDINGS } from "../lib/building-progress/mock-buildings";
 import { compositionAspectRatio, prepareRenderedVisual } from "../lib/building-progress/prepare-visual";
-import { createPhotoLinework, prepareGeneratedLinework } from "../lib/building-progress/blueprint-linework";
+import { prepareGeneratedLinework } from "../lib/building-progress/blueprint-linework";
 import { ApiError } from "magic-hour";
 import { getMagicHourClient } from "../lib/magic-hour/client";
 import { createDevelopmentBlueprintUrl } from "../lib/magic-hour/generate-blueprint";
@@ -15,8 +15,8 @@ import { BlueprintRequestError, requestBlueprint } from "../lib/building-progres
 import { prepareBlueprintFrame, restoreBlueprintFrame } from "../lib/building-progress/blueprint-frame";
 import { readSourceImage } from "../lib/magic-hour/source-image";
 import {
-  animateConstructionProgress, clampConstructionProgress,
-  PROGRESS_REVEAL_HOLD_MS, PROGRESS_REVEAL_DURATION_MS,
+  animateConstructionProgress, clampConstructionProgress, getConstructionRevealTiming,
+  type ConstructionProgressFrame,
 } from "../lib/building-progress/progress-animation";
 
 function manualAnimationClock() {
@@ -40,20 +40,50 @@ function manualAnimationClock() {
   };
 }
 
-test("Construction entrance holds a blueprint at 0, rises monotonically and stops at the real target", () => {
-  for (const target of [0, 50, 73, 100]) {
+test("Construction reveal timing scales with the actual percentage distance", () => {
+  for (const [target, durationMs, holdMs, confirmMs, exitMs] of [
+    [0, 0, 0, 0, 0],
+    [1, 224, 60, 220, 80],
+    [5, 320, 60, 220, 80],
+    [25, 800, 100, 225, 80],
+    [50, 1400, 200, 450, 150],
+    [100, 2600, 200, 450, 150],
+  ]) {
+    assert.deepEqual(getConstructionRevealTiming(0, target), { durationMs, holdMs, confirmMs, exitMs });
+  }
+  assert.deepEqual(getConstructionRevealTiming(45, 50), { durationMs: 320, holdMs: 0, confirmMs: 220, exitMs: 80 });
+  assert.deepEqual(getConstructionRevealTiming(50, 45), { durationMs: 320, holdMs: 0, confirmMs: 220, exitMs: 80 });
+  assert.equal(getConstructionRevealTiming(-10, 105).durationMs, 2600);
+  assert.equal(getConstructionRevealTiming(Number.NaN, 5).durationMs, 320);
+});
+
+test("Construction entrance holds at 0 and drives worker frames with the same progress clock", () => {
+  for (const target of [0, 1, 5, 25, 50, 100]) {
     const clock = manualAnimationClock();
     const values: number[] = [];
+    const frames: ConstructionProgressFrame[] = [];
+    const { holdMs, durationMs } = getConstructionRevealTiming(0, target);
     let completed = 0;
     animateConstructionProgress({
-      from: 0, to: target, delayMs: PROGRESS_REVEAL_HOLD_MS, reducedMotion: false, clock,
+      from: 0, to: target, delayMs: holdMs, reducedMotion: false, clock,
       onUpdate: (value) => values.push(value), onComplete: () => { completed++; },
+      onFrame: (frame) => frames.push(frame),
     });
-    clock.advance(PROGRESS_REVEAL_HOLD_MS - 1);
-    assert.equal(values.at(-1), 0, "The original photo must remain fully hidden during the initial hold");
-    clock.advance(PROGRESS_REVEAL_HOLD_MS + PROGRESS_REVEAL_DURATION_MS / 2);
-    if (target > 0) assert.ok(values.at(-1)! > 0 && values.at(-1)! < target);
-    clock.advance(PROGRESS_REVEAL_HOLD_MS + PROGRESS_REVEAL_DURATION_MS);
+    if (target > 0) {
+      clock.advance(holdMs - 1);
+      assert.equal(values.at(-1), 0, "The original photo must remain fully hidden during the initial hold");
+      assert.deepEqual(frames.at(-1), { progress: 0, fraction: 0, elapsedMs: -1, durationMs });
+      clock.advance(holdMs + durationMs / 2);
+      assert.ok(values.at(-1)! > 0 && values.at(-1)! < target);
+      assert.equal(frames.at(-1)?.progress, values.at(-1));
+      assert.equal(frames.at(-1)?.fraction, 0.5);
+      clock.advance(holdMs + durationMs - 1);
+      assert.equal(completed, 0, "The completion gesture must wait until the percentage reaches its target");
+      clock.advance(holdMs + durationMs);
+      assert.deepEqual(frames.at(-1), { progress: target, fraction: 1, elapsedMs: durationMs, durationMs });
+    } else {
+      assert.equal(frames.length, 0, "A 0% result does not create work frames");
+    }
     assert.equal(values.at(-1), target);
     assert.ok(values.every((value, index) => value >= (values[index - 1] ?? 0) && value <= target));
     assert.equal(completed, 1);
@@ -64,31 +94,57 @@ test("Construction entrance holds a blueprint at 0, rises monotonically and stop
 test("Cancelling an entrance prevents stale updates after user input, a new image or unmount", () => {
   const clock = manualAnimationClock();
   const values: number[] = [];
+  const frames: ConstructionProgressFrame[] = [];
   let completed = false;
   const cancel = animateConstructionProgress({
     from: 0, to: 50, reducedMotion: false, clock,
     onUpdate: (value) => values.push(value), onComplete: () => { completed = true; },
+    onFrame: (frame) => frames.push(frame),
   });
   clock.advance(300);
   const lastValue = values.at(-1);
+  const lastFrameCount = frames.length;
   cancel();
   clock.advance(5000);
   assert.equal(values.at(-1), lastValue);
   assert.equal(completed, false);
+  assert.equal(frames.length, lastFrameCount);
   assert.equal(clock.pendingCount(), 0);
 });
 
 test("Reduced motion preserves the 0% reveal then sets the target without a sweep", () => {
   const clock = manualAnimationClock();
   const values: number[] = [];
+  const frames: ConstructionProgressFrame[] = [];
+  const { holdMs } = getConstructionRevealTiming(0, 5);
   animateConstructionProgress({
-    from: 0, to: 50, delayMs: PROGRESS_REVEAL_HOLD_MS, reducedMotion: true, clock,
+    from: 0, to: 5, delayMs: holdMs, reducedMotion: true, clock,
     onUpdate: (value) => values.push(value), onComplete: () => undefined,
+    onFrame: (frame) => frames.push(frame),
   });
-  clock.advance(PROGRESS_REVEAL_HOLD_MS - 1);
+  clock.advance(holdMs - 1);
   assert.deepEqual(values, [0]);
-  clock.advance(PROGRESS_REVEAL_HOLD_MS);
-  assert.deepEqual(values, [0, 50]);
+  clock.advance(holdMs);
+  assert.deepEqual(values, [0, 5]);
+  assert.deepEqual(frames, [], "Reduced motion never sends work frames to the robot");
+  assert.equal(clock.pendingCount(), 0);
+});
+
+test("An adjustment animates only the changed percentage and ends exactly at its target", () => {
+  const clock = manualAnimationClock();
+  const values: number[] = [];
+  let completed = false;
+  animateConstructionProgress({
+    from: 50, to: 45, reducedMotion: false, clock,
+    onUpdate: (value) => values.push(value), onComplete: () => { completed = true; },
+  });
+  clock.advance(160);
+  assert.ok(values.at(-1)! < 50 && values.at(-1)! > 45);
+  clock.advance(319);
+  assert.equal(completed, false);
+  clock.advance(320);
+  assert.equal(values.at(-1), 45);
+  assert.equal(completed, true);
   assert.equal(clock.pendingCount(), 0);
 });
 
@@ -293,8 +349,8 @@ test("2. Architectural Blueprint prompt contains strict preservation rules", () 
   assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /Do not redesign the building/i);
   assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /Maintain the original camera perspective/i);
   assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /Technical blueprint \/ architectural CAD drawing/i);
-  assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /PRINCIPAL projecting building volumes/i);
-  assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /TWO projecting facade volumes should have FOUR bold vertical edge bundles/i);
+  assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /EVERY contour and detail with the SAME thin drafting stroke/i);
+  assert.match(ARCHITECTURAL_BLUEPRINT_PROMPT, /Do not draw parallel strand bundles/i);
 });
 
 test("3. generateBuildingBlueprint implements canonical caching (prevents duplicate IA calls)", async () => {
@@ -428,7 +484,8 @@ test("9. Development blueprint retains facade linework across the building", asy
   assert.equal(info.channels, 4, "The blueprint must have an alpha channel");
   assert.equal(data[3], 0, "The corner must reveal the card's background");
   assert.equal(data[(400 * info.width + 400) * 4 + 3], 0, "Facade interiors must remain transparent");
-  assert.equal(data[(400 * info.width + 240) * 4 + 3], 255, "Lateral structural outlines must remain prominent even against a similar brightness background");
+  assert.ok(data[(400 * info.width + 240) * 4 + 3] > 0, "Lateral outlines must remain visible in the original geometry");
+  assert.ok(data[(400 * info.width + 240) * 4 + 3] <= 200, "Local outlines must use the same contrast as the rest of the blueprint");
 });
 
 test("10. Reveal waits for both mounted images to decode and for two layout frames", async () => {
@@ -474,7 +531,7 @@ test("12. Composition accepts scaled matching images and rejects a different fra
   assert.throws(() => compositionAspectRatio({ width: 1000, height: 1300 }, { width: 0, height: 0 }), /enquadramento/);
 });
 
-test("13. Generated drafting canvas becomes transparent with stronger structural strokes", async () => {
+test("13. Generated drafting canvas becomes transparent without emphasizing structural strokes", async () => {
   const source = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
     <rect width="100" height="100" fill="white"/>
     <path d="M20 10v80M20 90h60M70 44v6" fill="none" stroke="#0057ad" stroke-width="1"/>
@@ -485,10 +542,10 @@ test("13. Generated drafting canvas becomes transparent with stronger structural
   assert.equal(info.channels, 4);
   assert.equal(alpha(0, 0), 0);
   assert.equal(alpha(50, 50), 0, "Empty facade areas must have no matte or solid fill");
-  assert.equal(alpha(20, 50), 255, "Main vertical supports must have full contrast");
-  assert.ok(alpha(18, 50) > 0, "Main supports must extend beyond the thin input stroke");
+  assert.ok(alpha(20, 50) > 0, "Main vertical supports must remain visible");
+  assert.equal(alpha(18, 50), 0, "Main supports must not extend beyond the original thin stroke");
   assert.equal(alpha(68, 46), 0, "Secondary details must stay thin");
-  assert.ok(alpha(70, 46) > 0 && alpha(70, 46) < 255);
+  assert.equal(alpha(20, 50), alpha(70, 46), "Main supports and detail lines must use the same contrast");
 });
 
 test("14. Existing transparent linework retains an empty background", async () => {
@@ -500,7 +557,7 @@ test("14. Existing transparent linework retains an empty background", async () =
   assert.equal(data[3], 0);
   const index = (50 * info.width + 30) * 4;
   assert.ok(data[index + 2] > data[index + 1], "Transparent input strokes must use the blue blueprint palette");
-  assert.equal(data[index + 3], 255);
+  assert.ok(data[index + 3] > 0 && data[index + 3] <= 204);
 });
 
 test("15. Filled AI surfaces are cleared while their contours remain visible", async () => {
@@ -513,84 +570,3 @@ test("15. Filled AI surfaces are cleared while their contours remain visible", a
   assert.equal(data[(50 * info.width + 50) * 4 + 3], 0, "Solid masses must not remain in the blueprint");
   assert.ok(data[(50 * info.width + 15) * 4 + 3] > 0, "Their original outline must remain aligned");
 });
-
-test("16. Only the exterior vertical edges receive rounded cylindrical bundles", async () => {
-  const source = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300">
-    <path d="M40 60v180M260 60v180M150 60v180M40 240h220" fill="none" stroke="#0071e3" stroke-width="1"/>
-  </svg>`);
-  const output = await prepareGeneratedLinework(source);
-  const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
-  const index = (x: number, y: number) => (y * info.width + x) * 4;
-  assert.ok(data[index(40, 59) + 3] > 0, "Rounded caps must extend along the edge's centerline");
-  assert.equal(data[index(33, 59) + 3], 0, "Caps must leave their outer square corners transparent");
-  assert.equal(data[index(40, 150) + 3], 255);
-  assert.ok(data[index(40, 150) + 1] > data[index(34, 150) + 1], "The bundle core must be lighter than its outer edge");
-  assert.equal(data[index(146, 150) + 3], 0, "Interior columns must not receive a thick bundle");
-  assert.equal(data[index(80, 244) + 3], 0, "Horizontal beams must remain thin");
-  assert.ok(data[index(150, 150) + 3] > 0, "Fine interior drafting lines must remain visible");
-});
-
-const MULTI_VOLUME_BUILDING = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="420" height="360">
-  <rect width="420" height="360" fill="white"/>
-  <path d="M40 320V40h100v280zM200 320V130h80v190zM320 320V210h60v110z
-    M90 40v280M240 130v190M350 210v110" fill="none" stroke="#0071e3" stroke-width="1"/>
-</svg>`);
-
-for (const [index, [name, convert]] of ([["generated", prepareGeneratedLinework], ["local photo", createPhotoLinework]] as const).entries()) {
-  test(`${17 + index}. All six exterior edges of unequal ${name} building volumes receive bundles`, async () => {
-    const output = await convert(MULTI_VOLUME_BUILDING);
-    const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
-    const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
-    for (const x of [40, 140, 200, 280, 320, 380]) {
-      assert.equal(alpha(x, 260), 255, `Exterior edge ${x} must be prominent, including shorter volumes`);
-      assert.ok(alpha(x - 4, 260) > 0, `Exterior edge ${x} must receive the complete bundle`);
-    }
-    for (const x of [90, 240, 350]) {
-      assert.equal(alpha(x - 4, 260), 0, `Internal column ${x} must remain thin`);
-    }
-    assert.equal(alpha(220, 260), 0, "Facade surfaces must remain transparent");
-  });
-}
-
-for (const [index, [name, convert]] of ([["generated", prepareGeneratedLinework], ["local photo", createPhotoLinework]] as const).entries()) {
-  test(`${19 + index}. A ${name} perspective facade corner is bundled while intermediate columns stay thin`, async () => {
-    const source = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="360" height="340">
-      <path d="M40 70L170 35L300 70V260L170 300L40 270zM170 35v265
-        M105 52.5V285M235 52.5V280" fill="none" stroke="#0071e3" stroke-width="1"/>
-    </svg>`);
-    const output = await convert(source);
-    const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
-    const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
-    for (const x of [40, 170, 300]) {
-      assert.equal(alpha(x, 180), 255, `Visible facade corner ${x} must be emphasized`);
-      assert.ok(alpha(x - 4, 180) > 0);
-    }
-    for (const x of [105, 235]) assert.equal(alpha(x - 4, 180), 0, `Interior column ${x} must stay thin`);
-  });
-}
-
-const PROJECTING_FACADES = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">
-  <rect width="600" height="400" fill="white"/>
-  <g fill="none" stroke="#0071e3" stroke-width="1">
-    <path d="M80 350V55h150v295zM350 350V35h150v315zM230 90h120M280 90v260M310 90v260"/>
-    <path d="M90 55v295M490 35v315M180 45h18M180 45v305M20 120v230M20 120h22"/>
-    ${[110, 140, 170, 200, 380, 410, 440, 470].map((x) => `<path d="M${x} 75v260M${x} 75h18M${x} 335h18"/>`).join("")}
-    ${[120, 175, 230, 285].map((y) => `<path d="M80 ${y}h150M350 ${y}h150"/>`).join("")}
-  </g>
-</svg>`);
-
-for (const [index, [name, convert]] of ([["generated", prepareGeneratedLinework], ["local photo", createPhotoLinework]] as const).entries()) {
-  test(`${21 + index}. Two ${name} projecting facade volumes have four principal bundles`, async () => {
-    const output = await convert(PROJECTING_FACADES);
-    const { data, info } = await sharp(output).raw().toBuffer({ resolveWithObject: true });
-    const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3];
-    for (const x of [80, 230, 350, 500]) {
-      assert.equal(alpha(x, 200), 255, `Principal volume corner ${x} must be prominent`);
-      assert.ok(alpha(x - 4, 200) > 0);
-    }
-    for (const x of [20, 90, 110, 140, 170, 180, 200, 280, 310, 380, 410, 440, 470, 490]) {
-      assert.equal(alpha(x - 4, 200), 0, `Detail ${x} must stay thin, including one-sided window caps and facade fins`);
-      assert.ok(alpha(x, 200) > 0, "Original fine lines must remain visible");
-    }
-  });
-}

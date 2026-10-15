@@ -5,6 +5,7 @@ import { createPhotoLinework, prepareGeneratedLinework } from "../building-progr
 import { prepareBlueprintFrame, restoreBlueprintFrame } from "../building-progress/blueprint-frame";
 import { readSourceImage } from "./source-image";
 import { BLUEPRINT_STYLE_VERSION } from "../building-progress/blueprint-style";
+import { BLUEPRINT_PROCESSING_VERSION } from "../building-progress/blueprint-processing";
 import { mapMagicHourError } from "./blueprint-error";
 
 interface CachedBlueprint {
@@ -17,7 +18,7 @@ interface CachedBlueprint {
 
 // In-memory cache for fast lookup
 const blueprintCache = new Map<string, CachedBlueprint>();
-const cacheKeyFor = (buildingId: string, imageHash: string) => `${BLUEPRINT_STYLE_VERSION}:padded-frame-v1:${buildingId}:${imageHash}`;
+const cacheKeyFor = (buildingId: string, imageHash: string) => `${BLUEPRINT_STYLE_VERSION}:${BLUEPRINT_PROCESSING_VERSION}:padded-frame-v1:${buildingId}:${imageHash}`;
 
 /**
  * Creates a stable hash for the source image URL or buffer
